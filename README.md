@@ -264,7 +264,7 @@ description: "執行專案靜態代碼分析與型別安全檢查 (linter.py)"
 ## 執行命令
 ```bash
 SCRIPT_PATH="$([ -f .agents/skills/my_tool/scripts/linter.py ] && echo .agents/skills/my_tool/scripts/linter.py || echo ~/.gemini/config/skills/my_tool/scripts/linter.py)"
-~/gemini_py3_env/bin/python "$SCRIPT_PATH" --target .
+python3 "$SCRIPT_PATH" --target .
 ```
 ```
 

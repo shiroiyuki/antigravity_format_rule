@@ -117,10 +117,10 @@ description: "明確的原子操作動詞、CLI 腳本名稱與目標檔案副�
 ---
 ```
 **腳本雙層動態解析與統一環境防衝突**：
-Skill 中的腳本嚴禁寫死個人絕對路徑或裸 `python3`，必須支援專案本地優先的動態切換並使用 `~/gemini_py3_env/bin/python`：
+Skill 中的腳本嚴禁寫死個人絕對路徑，必須支援專案本地優先的動態切換，直譯器調用請參閱 [跨環境路徑解析與無縫遷移規範](path_resolution_and_migration_standards.md)：
 ```bash
 SCRIPT_PATH="$([ -f .agents/skills/<name>/scripts/<script>.py ] && echo .agents/skills/<name>/scripts/<script>.py || echo ~/.gemini/config/skills/<name>/scripts/<script>.py)"
-~/gemini_py3_env/bin/python "$SCRIPT_PATH" ...
+python3 "$SCRIPT_PATH" ...
 ```
 
 ---

@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.tar.gz
+*.sha256
+.pytest_cache/

@@ -35,9 +35,9 @@ jobs:
         run: |
           python -m unittest discover tests
 
-      - name: Validate format_customizations.md
+      - name: Validate Rules
         run: |
-          python scripts/validate.py format_customizations.md
+          python scripts/validate.py format_customizations.md path_resolution_and_migration_standards.md
 
   release:
     name: Create GitHub Release
@@ -81,7 +81,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           ARCHIVE_NAME="antigravity_format_rule-${VERSION}.tar.gz"
-          tar -czvf "${ARCHIVE_NAME}" format_customizations.md README.md install.sh scripts/
+          tar -czvf "${ARCHIVE_NAME}" format_customizations.md path_resolution_and_migration_standards.md README.md install.sh scripts/
           sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
 
       - name: Create Release
@@ -92,6 +92,7 @@ jobs:
             antigravity_format_rule-*.tar.gz
             antigravity_format_rule-*.tar.gz.sha256
             format_customizations.md
+            path_resolution_and_migration_standards.md
             install.sh
           generate_release_notes: true
           draft: false
