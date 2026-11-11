@@ -1,6 +1,10 @@
 # Antigravity 自定義系統格式與架構標準 (Antigravity Customization Standards)
 
-本專案收錄並維護 Google Antigravity (AGY) 體系之核心規範檔案 `format_customizations.md`，並提供深入的底層技術原理解析與實戰使用指南。
+[![CI & Release Flow](https://github.com/shiroiyuki/antigravity_format_rule/actions/workflows/ci.yml/badge.svg)](https://github.com/shiroiyuki/antigravity_format_rule/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
+
+本專案收錄並維護 Google Antigravity (AGY) 體系之核心規範檔案 `format_customizations.md`，並提供深入的底層技術原理解析、一鍵部署腳本、確定性合規驗證工具與 CI/CD 發布流程。
 
 本規範完全基於對 `agy` 官方二進位執行檔（Go 1.28 核心架構）的逆向工程與符號控制流分析編纂而成，杜絕任何經驗主義或猜測，直指 Antigravity 五大自定義組件（Rules / Skills / Agents / Hooks / Plugins）的底層判定機制。
 
@@ -43,7 +47,120 @@
 
 ---
 
-## 如何使用本規範？（實戰配置與落地）
+## 一鍵安裝與部署（Installation）
+
+專案內建支援 POSIX 規範的自動化安裝腳本 `install.sh`，支援從遠端一鍵拉取或本地儲存庫部署。
+
+### 1. 遠端一行指令安裝 (Remote One-Liner)
+
+#### 全域安裝（推薦，所有專案皆適用）：
+```bash
+curl -fsSL https://raw.githubusercontent.com/shiroiyuki/antigravity_format_rule/main/install.sh | bash
+```
+> 安裝路徑：`~/.gemini/config/rules/format_customizations.md`
+
+#### 當前專案工作區安裝（僅當前專案生效）：
+```bash
+curl -fsSL https://raw.githubusercontent.com/shiroiyuki/antigravity_format_rule/main/install.sh | bash -s -- --workspace
+```
+> 安裝路徑：`./.agents/rules/format_customizations.md`
+
+### 2. 本地儲存庫安裝 (Local Installation)
+
+若已 Clone 本儲存庫，可直接執行本地安裝：
+```bash
+# 全域安裝
+./install.sh --global
+
+# 當前專案工作區安裝
+./install.sh --workspace
+```
+
+---
+
+## 規格合規驗證工具（Validator CLI）
+
+專案提供高效能、零外部依賴的規格校驗工具 `scripts/validate.py`，嚴格依據 `agy` 逆向結果進行邊界審查。
+
+### 特色功能
+- **零外部依賴**：內建純 Python 正則解析器，在未安裝第三方庫環境下立即可用；若環境存在 `PyYAML` 則自動升級使用。
+- **多維度自動診斷**：
+  - 檢測檔案大小是否超過 **24,000 bytes** 上限。
+  - 檢測 `rules/*.md` 是否合法配置 `trigger:`（攔截 `always_on: true` 錯誤語法）。
+  - 檢測 `agent.md` 是否誤用 `enable_write_tools` / `enable_mcp_tools` 等無效標籤。
+  - 檢測 `agent.md` 是否遺漏顯式 `tools` 清單（防止靜默降級為唯讀）。
+  - 檢測 `agent.md` 正文是否具備 `# H1` 系統提示詞標頭。
+
+### 使用範例
+
+```bash
+# 1. 驗證本專案規範本體
+python scripts/validate.py format_customizations.md
+
+# 2. 遞迴驗證全域所有規則與 Agent 設定
+python scripts/validate.py ~/.gemini/config/rules ~/.gemini/config/agents
+
+# 3. 遞迴驗證特定專案工作區
+python scripts/validate.py .agents/rules .agents/agents
+```
+
+### 驗證輸出示範
+```text
+=== Antigravity 規格合規驗證開始 ===
+[PASS] format_customizations.md
+
+=== 驗證總結 ===
+通過: 1 | 失敗: 0
+```
+
+---
+
+## 自動化測試與 CI/CD 發布流程（GitHub Actions）
+
+本專案配置了企業級的自動化持續整合與發布流水線（`.github/workflows/ci.yml`）：
+
+```mermaid
+flowchart LR
+    A[Push / PR] --> B[CI Workflow]
+    B --> C[Validate format_customizations.md]
+    C --> D[Run 10 Unit Tests]
+    D --> E{Is Tagged Release?}
+    E -- Yes: refs/tags/v* --> F[Package tar.gz & SHA256]
+    F --> G[Publish GitHub Release Assets]
+    E -- No --> H[Complete]
+```
+
+### 1. 持續整合（CI）
+- 任何推送到 `main` 分支的提交或 Pull Request，GitHub Actions 自動於乾淨虛擬機器環境執行：
+  1. 執行 `scripts/validate.py format_customizations.md` 確保規範本身合法。
+  2. 執行 `python -m unittest discover tests` 執行 10 個核心單元測試。
+
+### 2. 本地執行單元測試
+在提交 PR 之前，可於本地執行單元測試套件：
+```bash
+python -m unittest discover tests
+```
+測試結果：
+```text
+Ran 10 tests in 0.020s
+OK
+```
+
+### 3. 自動化版本發布（Release Flow）
+當為版本打上語義化標籤（Semantic Versioning）並推送到 GitHub 時，自動觸發 Release Job：
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0: Initial Antigravity Customization Standards"
+git push origin v1.0.0
+```
+- **發布產物**：
+  - `antigravity_format_rule-v*.tar.gz`（包含規範、腳本與工具）
+  - `antigravity_format_rule-v*.tar.gz.sha256`（完整性校驗雜湊值）
+  - 原生 `format_customizations.md`
+  - 一鍵安裝腳本 `install.sh`
+
+---
+
+## 實戰配置與目錄結構
 
 ### 1. 雙層檔案路徑標準
 
@@ -139,3 +256,5 @@ tools:
 ## 授權與維護
 - 規範文件：`format_customizations.md`
 - 遵循標準：Google Antigravity Customization Architecture & AGY CLI Specification
+- 維護者：[shiroiyuki](https://github.com/shiroiyuki)
+- License: [MIT](LICENSE)
