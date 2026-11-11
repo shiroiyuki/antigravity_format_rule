@@ -21,7 +21,7 @@ RED="\033[91m"
 RESET="\033[0m"
 
 REPO_RAW_URL="https://raw.githubusercontent.com/shiroiyuki/antigravity_format_rule/main"
-FILES=("format_customizations.md" "path_resolution_and_migration_standards.md")
+FILE_NAME="format_customizations.md"
 
 MODE="global"
 
@@ -62,35 +62,33 @@ echo -e "目標位置: ${YELLOW}${DISPLAY_NAME}${RESET}"
 # 建立目標目錄
 mkdir -p "$TARGET_DIR"
 
+TARGET_FILE="${TARGET_DIR}/${FILE_NAME}"
+
 # 判斷是否在本地 repo 執行
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
-
-for FILE_NAME in "${FILES[@]}"; do
-    TARGET_FILE="${TARGET_DIR}/${FILE_NAME}"
-    if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/${FILE_NAME}" ]; then
-        echo -e "從本地儲存庫複製 ${FILE_NAME} ..."
-        cp "${SCRIPT_DIR}/${FILE_NAME}" "$TARGET_FILE"
+if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/${FILE_NAME}" ]; then
+    echo -e "從本地儲存庫複製 ${FILE_NAME} ..."
+    cp "${SCRIPT_DIR}/${FILE_NAME}" "$TARGET_FILE"
+else
+    echo -e "從 GitHub 下載 ${FILE_NAME} ..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "${REPO_RAW_URL}/${FILE_NAME}" -o "$TARGET_FILE"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$TARGET_FILE" "${REPO_RAW_URL}/${FILE_NAME}"
     else
-        echo -e "從 GitHub 下載 ${FILE_NAME} ..."
-        if command -v curl >/dev/null 2>&1; then
-            curl -fsSL "${REPO_RAW_URL}/${FILE_NAME}" -o "$TARGET_FILE"
-        elif command -v wget >/dev/null 2>&1; then
-            wget -qO "$TARGET_FILE" "${REPO_RAW_URL}/${FILE_NAME}"
-        else
-            echo -e "${RED}錯誤: 系統未安裝 curl 或 wget，無法下載檔案。${RESET}" >&2
-            exit 1
-        fi
-    fi
-
-    # 驗證下載檔案大小與完整性
-    if [ ! -s "$TARGET_FILE" ]; then
-        echo -e "${RED}錯誤: 安裝檔案 ${FILE_NAME} 為空或建立失敗。${RESET}" >&2
+        echo -e "${RED}錯誤: 系統未安裝 curl 或 wget，無法下載檔案。${RESET}" >&2
         exit 1
     fi
+fi
 
-    FILE_SIZE=$(wc -c < "$TARGET_FILE")
-    echo -e "${GREEN}✔ 安裝成功！${RESET} ${FILE_NAME} (${FILE_SIZE} bytes)"
-    echo -e "檔案路徑: ${GREEN}${TARGET_FILE}${RESET}"
-done
+# 驗證下載檔案大小與完整性
+if [ ! -s "$TARGET_FILE" ]; then
+    echo -e "${RED}錯誤: 安裝檔案為空或建立失敗。${RESET}" >&2
+    exit 1
+fi
+
+FILE_SIZE=$(wc -c < "$TARGET_FILE")
+echo -e "${GREEN}✔ 安裝成功！${RESET} (${FILE_SIZE} bytes)"
+echo -e "檔案路徑: ${GREEN}${TARGET_FILE}${RESET}"
 echo -e "\n${BLUE}使用說明:${RESET}"
 echo -e "當前對話或專案開啟時，Antigravity 會在處理自定義組件（Rules / Skills / Agents / Hooks / Plugins）時自動路由並掛載此標準。"
