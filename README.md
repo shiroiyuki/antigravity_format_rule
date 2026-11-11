@@ -40,7 +40,7 @@
 
 | 組件 | 底層解析函式 / 結構體 | 確定性行為特徵 | 關鍵語法要求 |
 | :--- | :--- | :--- | :--- |
-| **Rules (`rules/*.md`)** | `parseRuleInfo`<br>`categorizeRule` | 1. 檔名為 `AGENTS.md` / `GEMINI.md` 時硬編碼為 `always_on`，跳過 Frontmatter 解析。<br>2. 其餘 `.md` 強制解析 Frontmatter，非法 Trigger 觸發 `Invalid rule trigger` 拋棄。 | 必須宣告 `trigger:`（值限 `always_on`、`model_decision`、`glob`、`manual`）。 |
+| **Rules (`rules/*.md`)** | `parseRuleInfo`<br>`categorizeRule`<br>`RuleFrontmatter` | 1. 檔名為 `AGENTS.md` / `GEMINI.md` 時硬編碼為 `always_on`，跳過 Frontmatter 解析。<br>2. 其餘 `.md` 強制解析 Frontmatter，非法 Trigger 觸發 `Invalid rule trigger` 拋棄。<br>3. 支援 4 種合法 Trigger（`always_on`、`model_decision`、`glob`、`manual`）。 | 必須宣告 `trigger:`。<br>- `model_decision` 必備 `description:`<br>- `glob` 必備 `globs:` (或 `glob:`)<br>- 嚴禁 `always_on: true` |
 | **Agents (`agent.md`)** | `AgentFrontmatter`<br>`ParseAgentScriptItemFromMarkdown` | 1. 僅識別原生 Frontmatter 標籤。<br>2. 省略 `tools` 僅給予唯讀權限。<br>3. `subagent: true` 自動注入 `send_message`。<br>4. 系統提示詞（System Prompt）必須以 `# H1` 分界。 | 顯式宣告 `tools: [read_file, write_file, ...]`；若為純後台工位可設 `mainAgent: false`。 |
 | **Skills (`SKILL.md`)** | `parseSkillMetadata`<br>`ParseWorkflowContent` | 透過 `Progressive Disclosure`（漸進式揭露）機制運作，平時僅向模型上下文注入 `name` 與 `description`。 | 必須具備 `name` 與明確動詞引導的 `description`。 |
 | **Plugins (`plugin.json`)** | `PluginCatalogKey`<br>`parseRuleInfo` | 命名空間容器。嚴格規定原生外掛之 `hooks.json` 必須置於外掛根目錄；`rules/` 下之 `AGENTS.md` 自動常駐。 | 根目錄必須具備 `plugin.json`。 |
@@ -169,14 +169,17 @@ Antigravity 遵循「**工作區本地優先，全域回退（Workspace Override
 ```text
 ├── 全域通用配置 (~/.gemini/config/)          # 所有專案通用底座
 │   ├── rules/                              # 全域通用安全與環境約束
+│   │   ├── AGENTS.md                       # 全域常駐總則 (Always-on, 無 Frontmatter)
+│   │   └── <rule-name>.md                  # 全域領域規範 (trigger: model_decision / glob)
 │   ├── skills/                             # 全域通用原子工具庫
 │   ├── agents/                             # 全域預設子代理人設
 │   ├── hooks.json                          # 全域生命週期自動化
 │   └── plugins/                            # 跨專案通用外掛套件
 │
 └── 專案本地配置 (<project_root>/.agents/)     # 當前專案優先覆蓋
-    ├── rules/                              # 專案特定業務規範
-    │   └── AGENTS.md                       # 專案階段性 SOP (常駐)
+    ├── rules/                              # 專案特定業務規範 (*.md)
+    │   ├── AGENTS.md                       # 專案常駐總則 (Always-on, 無 Frontmatter)
+    │   └── <rule-name>.md                  # 專案特定領域規範 (trigger: model_decision / glob)
     ├── skills/                             # 專案專用腳本工具
     ├── agents/                             # 專案客製化專業工位
     ├── hooks.json                          # 專案防禦與自動化鉤子
@@ -187,8 +190,19 @@ Antigravity 遵循「**工作區本地優先，全域回退（Workspace Override
 
 ### 2. 各組件撰寫範本
 
-#### A. 獨立規則檔 (`rules/domain_router.md`)
-用於按需路由特定領域知識（如資料庫操作、前端規範、逆向工程），平時僅佔用一行摘要：
+#### A. 規則檔體系 (`rules/*.md` 與 `AGENTS.md`)
+底層支援**常駐特權規則**與**4 種自定義 Trigger 條件**：
+
+##### 1. 特權常駐規則 (`rules/AGENTS.md` 或專案根目錄 `AGENTS.md`)
+純 Markdown，**禁止/跳過** YAML Frontmatter，對話全程常駐：
+```markdown
+# 專案階段性 SOP 與架構規範
+1. 所有修改必須隨附單元測試。
+2. 遵循動態路徑解析協議。
+```
+
+##### 2. 模型語意決策載入 (`trigger: model_decision`)
+用於按需路由特定領域知識（如資料庫操作、逆向工程），**必須具備 `description:`**，平時僅佔用一行摘要：
 ```yaml
 ---
 trigger: model_decision
@@ -198,6 +212,43 @@ description: "當處理資料庫 Migration、Schema 變更或索引優化時觸�
 # 資料庫工程與變更守則
 1. 嚴禁在未備份情況下執行 DROP / TRUNCATE。
 2. 所有欄位變更必須具備向下相容性。
+```
+
+##### 3. 檔案模式匹配載入 (`trigger: glob`)
+當 Agent 操作或編輯符合副檔名或路徑的檔案時自動掛載，**必須具備 `globs:` (或 `glob:`)**：
+```yaml
+---
+trigger: glob
+globs: "**/*.{ts,tsx}, **/frontend/**"
+description: "前端 TypeScript 靜態型別與組件規範"
+---
+
+# 前端與 TypeScript 開發規範
+1. 嚴禁使用 any，必須宣告明確介面或型別。
+```
+
+##### 4. 全域常駐自定義規則 (`trigger: always_on`)
+無條件常駐，參與 20,000 Tokens Rules Budget 結算（嚴禁寫死 `always_on: true`）：
+```yaml
+---
+trigger: always_on
+---
+
+# 全域核心約束
+1. 嚴禁硬編碼使用者個人絕對路徑。
+```
+
+##### 5. 純手動提及規則 (`trigger: manual`)
+平時不自動載入，僅供手動工作流或使用者顯式提及時參照：
+```yaml
+---
+trigger: manual
+description: "緊急災難還原手冊與資料庫回滾流程"
+---
+
+# 災難還原手冊
+1. 立即切斷外網流量。
+2. 從最新快照執行 PITR 還原。
 ```
 
 #### B. 技能描述檔 (`skills/my_tool/SKILL.md`)

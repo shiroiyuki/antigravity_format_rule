@@ -143,6 +143,43 @@ class TestAntigravityValidator(unittest.TestCase):
         errors = validate.validate_agent_file(agent)
         self.assertTrue(any("未宣告 `tools`" in e for e in errors))
 
+    def test_glob_trigger_valid(self):
+        rule = self.dir_path / "glob_rule.md"
+        rule.write_text(
+            "---\n"
+            "trigger: glob\n"
+            "globs: '**/*.ts, **/*.tsx'\n"
+            "---\n\n"
+            "# TS Rule\n",
+            encoding="utf-8"
+        )
+        errors = validate.validate_rule_file(rule)
+        self.assertEqual(errors, [])
+
+    def test_glob_trigger_missing_globs(self):
+        rule = self.dir_path / "glob_missing.md"
+        rule.write_text(
+            "---\n"
+            "trigger: glob\n"
+            "---\n\n"
+            "# TS Rule\n",
+            encoding="utf-8"
+        )
+        errors = validate.validate_rule_file(rule)
+        self.assertTrue(any("globs" in e for e in errors))
+
+    def test_manual_trigger(self):
+        rule = self.dir_path / "manual_rule.md"
+        rule.write_text(
+            "---\n"
+            "trigger: manual\n"
+            "---\n\n"
+            "# Manual Rule\n",
+            encoding="utf-8"
+        )
+        errors = validate.validate_rule_file(rule)
+        self.assertEqual(errors, [])
+
     def test_agent_missing_h1(self):
         agent = self.dir_path / "agent.md"
         agent.write_text(

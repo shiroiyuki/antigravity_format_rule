@@ -131,11 +131,11 @@ def validate_rule_file(path: Path) -> List[str]:
         if not desc or not str(desc).strip():
             errors.append("`trigger: model_decision` 必須具備非空的 `description` 供模型動態路由")
 
-    # 檢測 glob 必須具備 globs
+    # 檢測 glob 必須具備 globs 或 glob
     if trigger == "glob":
-        globs = meta.get("globs")
-        if not globs:
-            errors.append("`trigger: glob` 必須具備 `globs` 欄位")
+        globs = meta.get("globs") or meta.get("glob")
+        if not globs or not str(globs).strip():
+            errors.append("`trigger: glob` 必須具備非空的 `globs` (或 `glob`) 欄位")
 
     return errors
 

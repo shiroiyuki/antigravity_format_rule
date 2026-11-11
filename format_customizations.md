@@ -15,28 +15,100 @@ description: "當建立、修改或重構 Antigravity 自定義組件（Rules �
 
 | 組件類型 | 全域路徑 (Global - 本機所有專案通用底座) | 工作區路徑 (Workspace - 當前專案優先) |
 | :--- | :--- | :--- |
-| **Rules (行為約束)** | `~/.gemini/config/rules/<name>.md` | `.agents/rules/<name>.md` (或 `.agents/AGENTS.md`) |
+| **Rules (行為約束)** | `~/.gemini/config/rules/*.md`<br>`~/.gemini/config/rules/AGENTS.md` | `.agents/rules/*.md`<br>`.agents/rules/AGENTS.md` (或 `<root>/AGENTS.md`) |
 | **Skills (技能與腳本)** | `~/.gemini/config/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` (或 `.agents/skills.json`) |
 | **Agents (子代理人設)** | `~/.gemini/config/agents/<name>/agent.md` | `.agents/agents/<name>/agent.md` |
 | **Hooks (生命週期鉤子)** | `~/.gemini/config/hooks.json` | `.agents/hooks.json` |
 | **Plugins (命名空間套件)** | `~/.gemini/config/plugins/<name>/plugin.json` | `.agents/plugins/<name>/plugin.json` (或 `.agents/plugins.json`) |
 
----
-
-### 2. YAML / JSON 防呆與語法約束
-
-#### A. 獨立規則檔 (`rules/*.md`)
-獨立規則檔**必須強制宣告觸發模式**以參與 20K Token 結算，**嚴禁使用 `always_on: true`**（此為非法語法）：
-```yaml
----
-trigger: always_on   # 僅限跨領域通用系統級底層硬約束（如環境路徑、檔案名截斷、記憶協議）
-# 或
-trigger: model_decision
-description: "精確定義何種領域意圖、工作流或報錯簽名時觸發載入（充當領域路由器 Domain Router，平時僅佔一行摘要）"
----
+#### 標準雙層目錄結構樹
+```text
+├── 全域通用配置 (~/.gemini/config/)          # 所有專案通用底座
+│   ├── rules/                              # 全域通用安全與環境約束
+│   │   ├── AGENTS.md                       # 全域常駐總則 (Always-on, 無 Frontmatter)
+│   │   └── <rule-name>.md                  # 全域領域規範 (trigger: model_decision / glob)
+│   ├── skills/                             # 全域通用原子工具庫
+│   ├── agents/                             # 全域預設子代理人設
+│   ├── hooks.json                          # 全域生命週期自動化
+│   └── plugins/                            # 跨專案通用外掛套件
+│
+└── 專案本地配置 (<project_root>/.agents/)     # 當前專案優先覆蓋
+    ├── rules/                              # 專案特定業務規範 (*.md)
+    │   ├── AGENTS.md                       # 專案常駐總則 (Always-on, 無 Frontmatter)
+    │   └── <rule-name>.md                  # 專案特定領域規範 (trigger: model_decision / glob)
+    ├── skills/                             # 專案專用腳本工具
+    ├── agents/                             # 專案客製化專業工位
+    ├── hooks.json                          # 專案防禦與自動化鉤子
+    └── plugins/                            # 專案專用套件 (或 plugins.json)
 ```
 
-#### B. 技能描述檔 (`skills/<name>/SKILL.md`)
+---
+
+### 2. 規則雙軌體系與 YAML / JSON 語法約束
+
+#### A. 規則檔雙軌解析機制 (`AGENTS.md` vs `rules/<name>.md`)
+依據底層 Go 引擎（`parseRuleInfo`）解析邏輯，無論全域（`~/.gemini/config/rules/`）、專案本地（`.agents/rules/`）或外掛（`plugins/<name>/rules/`），規則檔案均遵循確定性雙軌分支：
+
+1. **特權常駐規則 (`rules/AGENTS.md` 或 `GEMINI.md`)**：
+   - **底層分支**：直接跳過 Frontmatter 解析器（`SplitMarkdownFrontmatter`），硬編碼強制為 `trigger: always_on`。
+   - **語法約束**：純 Markdown 正文，**嚴禁/忽略** YAML Frontmatter。
+   - **核心用途**：定義專案或外掛的全局 SOP、開發總方針與團隊共識，對話全程常駐。
+2. **一般自定義規則 (`rules/<name>.md`，非 `AGENTS.md` / `GEMINI.md` 之任意 `.md` 檔)**：
+   - **底層分支**：強制解析 YAML Frontmatter，並依 `trigger` 枚舉進行分類（`categorizeRule`）。
+   - **語法約束**：**必須**宣告合法 `trigger:`（值嚴格限定為 `always_on`、`model_decision`、`glob`、`manual` 四種），**嚴禁使用 `always_on: true`**（此為非法語法，會觸發 `Invalid rule trigger: 0` 導致規則被靜默拋棄）。
+   - **特殊檔名例外**：若於 `rules/` 內放置無 Frontmatter 的 `README.md`，底層會自動將其視為說明檔並靜默跳過（skip），不參與模型推理。
+
+#### B. `RuleFrontmatter` 結構體與 4 種 Trigger 完整規格
+經逆向 `agy` 核心結構體 `customizations.RuleFrontmatter`：
+```go
+type RuleFrontmatter struct {
+    Trigger     string `yaml:"trigger"`
+    Description string `yaml:"description"`
+    Glob        string `yaml:"glob"`
+    Globs       string `yaml:"globs"` // 底層雙相容 glob 與 globs
+}
+```
+
+底層 `categorizeRule` 僅支援以下 4 種合法 Trigger（缺省或超出枚舉範圍均直接拋棄）：
+
+1. **`always_on`（常駐全域規則）**：
+   - 無條件常駐，參與 20,000 Tokens 專用預算結算。
+   ```yaml
+   ---
+   trigger: always_on
+   ---
+   ```
+2. **`model_decision`（語意按需動態觸發）**：
+   - 平時僅向上下文注入一行摘要，當任務意圖匹配時由模型自主掛載全文。
+   - **必須具備 `description:` 欄位**（缺省會引發 CLI 警告）。
+   ```yaml
+   ---
+   trigger: model_decision
+   description: "當處理資料庫 Schema 變更、SQL 遷移或索引優化時觸發載入"
+   ---
+   ```
+3. **`glob`（檔案路徑模式匹配）**：
+   - 當 Agent 讀取、編輯符合萬用字元特徵的檔案時自動掛載全文。
+   - **必須具備 `globs:` 或 `glob:` 欄位**（缺省會引發 CLI 警告）。支援逗號分隔、大括號展開與路徑前綴：
+   ```yaml
+   ---
+   trigger: glob
+   globs: "**/*.{ts,tsx}, **/frontend/**"
+   description: "前端 TypeScript 靜態型別與組件規範"
+   ---
+   ```
+4. **`manual`（純手動提及觸發）**：
+   - 平時完全不注入上下文，亦不參與模型自動決策，僅供手動工作流或使用者顯式提及時查閱。
+   ```yaml
+   ---
+   trigger: manual
+   description: "緊急災難還原手冊與資料庫回滾流程（僅供手動參照）"
+   ---
+   ```
+
+---
+
+#### C. 技能描述檔 (`skills/<name>/SKILL.md`)
 `SKILL.md` 必須具備 `name` 與明確的原子動作 `description`，供系統進行動態語意檢索與漸進式掛載（Progressive Disclosure）：
 ```yaml
 ---
@@ -51,7 +123,9 @@ SCRIPT_PATH="$([ -f .agents/skills/<name>/scripts/<script>.py ] && echo .agents/
 ~/gemini_py3_env/bin/python "$SCRIPT_PATH" ...
 ```
 
-#### C. 子代理人設檔 (`agents/<name>/agent.md`)
+---
+
+#### D. 子代理人設檔 (`agents/<name>/agent.md`)
 經逆向查驗 `agy` 二進位實作（`customizations.AgentFrontmatter` 與 `customizations.saveMDAgent`），`enable_write_tools`、`enable_mcp_tools`、`enable_subagent_tools` 僅為動態工具 `define_subagent` 的 JSON 調用參數，**並非 `agent.md` 支援的 YAML Frontmatter 鍵名**（寫入 YAML 會被 `yaml.Unmarshal` 靜默丟棄，且省略 `tools` 時底層僅掛載唯讀預設集）。
 靜態 `agent.md` 必須使用 `AgentFrontmatter` 原生結構標籤顯式宣告 `tools` 陣列與 `inheritMcp`（System Prompt 正文須以 `# H1` 標題開頭）：
 ```yaml
@@ -74,21 +148,21 @@ tools:               # 省略時僅掛載唯讀預設集；必須依角色最小
 ```
 *(註：對純顧問型子代理如 `architect` / `redteam`，於其 System Prompt 中規範寫入路徑白名單僅限 `.agents/logs/` 與 `.agents/scratchpad/`，嚴禁修改專案業務源碼。)*
 
-#### D. 官方插件套件 (`plugins/<name>/plugin.json`)
+---
+
+#### E. 官方插件套件 (`plugins/<name>/plugin.json`)
 當需要將同一服務或領域的 `skills/`、`agents/`、`rules/`、`hooks.json` 與 `mcp_config.json` 打包為單一可啟停/分發的單元時，**必須使用 Antigravity 官方 Plugin 結構，嚴禁自造 `blueprints/` 等非標準目錄**。
-Plugin 內 `rules/*.md` 經底層 `(*Manager).parseRuleInfo` 解析時，依檔名分為兩條互斥分支：
-1. **`rules/AGENTS.md`（或 `GEMINI.md`）**：完全跳過 YAML Frontmatter 解析，硬編碼強制為 `trigger: always_on`（不可寫 Frontmatter，Plugin 啟用期間全程常駐）。
-2. **`rules/<rule-name>.md`（非 `AGENTS.md` / `GEMINI.md` 之任意 `.md` 檔）**：強制進入 `SplitMarkdownFrontmatter` 解析 YAML 標頭，**必須**於開頭宣告 `trigger: always_on | model_decision | glob | manual`（若漏寫 Frontmatter 則 `trigger` 為空，會在 `categorizeRule` 觸發 `Invalid rule trigger: 0` 並被靜默丟棄）。當 Plugin 內含大型領域規範且需按需載入時，應命名為 `rules/<rule-name>.md` 並設為 `trigger: model_decision`（或置於 `~/.gemini/config/rules/<name>.md`）。
+Plugin 內的 `rules/AGENTS.md` 自動常駐，其餘 `rules/*.md` 需依上述 A/B 節配置 Frontmatter。
 
 ---
 
-### 3. 五位一體職責解耦鐵律 (Separation of Concerns: Rule vs Skill vs Agent vs Hook vs Plugin)
+### 3. 五位一體職責解耦鐵律 (Separation of Concerns)
 
 為杜絕組件職能混淆、規則膨脹與能力丟失，所有設計必須嚴格堅守本質分工：
 
 1. **Rule = 政策/領域路由器/驗收標準/專案工作流（What / Router, Constraint & Workflow）**：
-   - Global Rules 定義系統邊界、硬體規格標準、調度方針與交付品質驗收門檻（如八大維度零缺陷），以及按需觸發的領域規範（`trigger: model_decision`）。
-   - Workspace `.agents/AGENTS.md` 定義**該特定 Project 的階段式標準作業流程（Project SOP & Stage Gates）**。
+   - Global Rules 定義系統邊界、硬體規格標準、調度方針與交付品質驗收門檻，以及按需觸發的領域規範（`trigger: model_decision`）。
+   - Workspace `.agents/rules/AGENTS.md` 定義**該特定 Project 的階段式標準作業流程（Project SOP & Stage Gates）**。
    - 純政策與調度流程文字，**不包含易變的具體 Python 實作腳本**。
 2. **Skill = 實體工具庫/SDK/原子動作（How / Atomic Toolkit）**：
    - 封裝可執行的 Python/Bash 腳本、演算法庫、CLI 工具與單元測試。
